@@ -90,7 +90,7 @@ module riscvsingle (input  logic        clk, reset,
 		 ALUSrc, AuiSrc,  RegWrite, Jump,
 		 ImmSrc, ALUControl);
    datapath dp (clk, reset, ResultSrc, PCSrc,
-		ALUSrc, AuiSrc, RegWrite,
+		ALUSrc, AuiSrc, Jump, RegWrite,
 		ImmSrc, ALUControl,
 		Zero, v, n, C, PC, Instr,
 		ALUResult, WriteData, ReadData);
@@ -154,6 +154,7 @@ module maindec (input  logic [6:0] op,
        7'b1101111: controls = 13'b1_011_0_0_10_0_00_1_0; // jal
        7'b0110111: controls = 13'b1_100_1_0_00_0_11_0_0; // lui
        7'b0010111: controls = 13'b1_100_1_0_00_0_00_0_1; //auipc
+       7'b1100111: controls = 13'b1_000_1_0_10_0_00_1_0; //jalr
 
        default: controls = 13'bx_xxx_x_x_xx_x_xx_x_x; // ???
      endcase // case (op)
@@ -201,7 +202,7 @@ endmodule // aludec
 
 module datapath (input  logic        clk, reset,
 		 input  logic [1:0]  ResultSrc,
-		 input  logic 	     PCSrc, ALUSrc, AuiSrc,
+		 input  logic 	     PCSrc, ALUSrc, AuiSrc, Jump,
 		 input  logic 	     RegWrite,
 		 input  logic [2:0]  ImmSrc,
 		 input  logic [3:0]  ALUControl,
@@ -211,7 +212,7 @@ module datapath (input  logic        clk, reset,
 		 output logic [31:0] ALUResult, WriteData,
 		 input  logic [31:0] ReadData);
    
-   logic [31:0] 		     PCNext, PCPlus4, PCTarget;
+   logic [31:0] 		     PCNext, PCPlus4, PCTarget_Branch, PCTarget_jalr, PCTarget;
    logic [31:0] 		     ImmExt;
    logic [31:0] 		     SrcA, SrcB, SrcC;
    logic [31:0] 		     Result;
@@ -219,7 +220,9 @@ module datapath (input  logic        clk, reset,
    // next PC logic
    flopr #(32) pcreg (clk, reset, PCNext, PC);
    adder  pcadd4 (PC, 32'd4, PCPlus4);
-   adder  pcaddbranch (PC, ImmExt, PCTarget);
+   adder  pcaddbranch (PC, ImmExt, PCTarget_Branch);
+   adder  pcaddjalr (PC, ALUResult, PCTarget_jalr );
+   mux2 #(32) jalmux (PCTarget_Branch, PCTarget_jalr, Jump, PCTarget);
    mux2 #(32)  pcmux (PCPlus4, PCTarget, PCSrc, PCNext);
    // register file logic
    regfile  rf (clk, RegWrite, Instr[19:15], Instr[24:20],
@@ -231,9 +234,9 @@ module datapath (input  logic        clk, reset,
    mux2 #(32)  srcamux (SrcA, PC, AuiSrc, SrcC); //srcamux
 
    alu  alu (SrcC, SrcB, ALUControl, ALUResult, Zero, v, n, C);
-   mux3 #(32) resultmux (ALUResult, ReadData, PCPlus4,ResultSrc, Result);
+  // mux3 #(32) resultmux (ALUResult, ReadData, PCPlus4,ResultSrc, Result);
 
-   //mux4 #(32) resultmux (ALUResult, ReadData, PCPlus4, PCTarget, ResultSrc, Result);
+   mux4 #(32) resultmux (ALUResult, ReadData, PCPlus4, SrcA, ResultSrc, Result); //jalr
 
 endmodule // datapath
 
